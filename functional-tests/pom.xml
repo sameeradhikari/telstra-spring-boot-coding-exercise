@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <parent>
     <groupId>com.telstra.code-challenge</groupId>
@@ -11,6 +11,7 @@
 
   <properties>
     <microservice.port>8080</microservice.port>
+    <quoters.port>8090</quoters.port>
   </properties>
 
   <dependencies>
@@ -33,98 +34,220 @@
     </dependency>
   </dependencies>
 
-  <build>
-    <!-- See https://github.com/intuit/karate#folder-structure for explination -->
-    <testResources>
-      <testResource>
-        <directory>src/test/java</directory>
-        <excludes>
-          <exclude>**/*.java</exclude>
-        </excludes>
-      </testResource>
-    </testResources>
-    <plugins>
-      <!-- This brings in the microservice to run -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>copy</id>
-            <phase>package</phase>
-            <goals>
-              <goal>copy</goal>
-            </goals>
-            <configuration>
-              <artifactItems>
-                <artifactItem>
-                  <groupId>${project.groupId}</groupId>
-                  <artifactId>microservice</artifactId>
-                  <version>${project.version}</version>
-                  <type>jar</type>
-                  <destFileName>app.jar</destFileName>
-                  <classifier>exec</classifier>
-                </artifactItem>
-              </artifactItems>
-              <outputDirectory>${project.build.directory}</outputDirectory>
-              <stripVersion>true</stripVersion>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <!-- This plugin starts the microservice before the integration tests -->
-      <plugin>
-        <groupId>com.bazaarvoice.maven.plugins</groupId>
-        <artifactId>process-exec-maven-plugin</artifactId>
-        <version>0.7</version>
-        <executions>
-          <!-- This starts the microservcie -->
-          <execution>
-            <id>microservice-process</id>
-            <phase>pre-integration-test</phase>
-            <goals>
-              <goal>start</goal>
-            </goals>
-            <configuration>
-              <name>microservice</name>
-              <waitForInterrupt>false</waitForInterrupt>
-              <healthcheckUrl>http://localhost:${microservice.port}/actuator/health</healthcheckUrl>
-              <waitAfterLaunch>30</waitAfterLaunch>
-              <arguments>
-                <argument>java</argument>
-                <argument>-jar</argument>
-                <argument>${project.build.directory}/app.jar</argument>
-                <argument>--server.port=${microservice.port}</argument>
-              </arguments>
-            </configuration>
-          </execution>
-          <!--Stop all processes in reverse order-->
-          <execution>
-            <id>stop-all</id>
-            <phase>post-integration-test</phase>
-            <goals>
-              <goal>stop-all</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-failsafe-plugin</artifactId>
-        <executions>
-          <execution>
-            <goals>
-              <goal>integration-test</goal>
-              <goal>verify</goal>
-            </goals>
+  <profiles>
+    <!-- If this profile is set the following ports will override the the ones -->
+    <!-- reseved by the build helper plugin                                    -->
+    <profile>
+      <id>dev</id>
+      <properties>
+        <microservice.port>8080</microservice.port>
+        <quoters.port>8090</quoters.port>
+      </properties>
+    </profile>
+    <!-- This profile is automatically activated by the existance of docker. -->
+    <profile>
+      <id>docker</id>
+      <activation>
+        <file>
+          <exists>/var/run/docker.sock</exists>
+        </file>
+      </activation>
+      <build>
+        <!--This combines the resources and java files in one directory. It is a recomendation-->
+        <!--from the author of karate as it enables the feature files to be next to the related-->
+        <!--java files.-->
+        <resources>
+          <resource>
+            <directory>src/main/java</directory>
+            <excludes>
+              <exclude>**/*.java</exclude>
+            </excludes>
+          </resource>
+        </resources>
+
+        <!--This combines the test resources and test java files in one directory. It is a-->
+        <!--recommendation from the author of karate as it enables the feature files to be next -->
+        <!--to the related java files.-->
+        <testResources>
+          <testResource>
+            <directory>src/test/java</directory>
+            <excludes>
+              <exclude>**/*.java</exclude>
+            </excludes>
+          </testResource>
+        </testResources>
+        <plugins>
+          <!-- This brings in the microservice to run -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-dependency-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>copy</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>copy</goal>
+                </goals>
+                <configuration>
+                  <artifactItems>
+                    <artifactItem>
+                      <groupId>${project.groupId}</groupId>
+                      <artifactId>microservice</artifactId>
+                      <version>${project.version}</version>
+                      <type>jar</type>
+                      <destFileName>app.jar</destFileName>
+                      <classifier>exec</classifier>
+                    </artifactItem>
+                  </artifactItems>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                  <stripVersion>true</stripVersion>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- The build-helper-maven-plugin is used to reserve some random ports for the -->
+          <!-- microservice and doubles port. -->
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>build-helper-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>reserve-ports</id>
+                <goals>
+                  <goal>reserve-network-port</goal>
+                </goals>
+                <phase>process-resources</phase>
+                <configuration>
+                  <portNames>
+                    <portName>microservice.port</portName>
+                    <portName>quoters.port</portName>
+                  </portNames>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- The maven-failsafe-plugin is used to run the functional tests. These tests are -->
+          <!-- run at the maven integration-test stage. Before these tests are run the-->
+          <!-- microservice and doubles are started by other plugins at the -->
+          <!-- pre-integration test stage. These services are also stopped at the -->
+          <!-- post-integration-test phase. -->
+          <!-- NOTE: systemPropertyVariables are used to pass in the values of the randomly -->
+          <!-- assigned ports into the running jvm. -->
+          <!-- NOTE: only tests in src/test/java/functionaltests are run. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
             <configuration>
               <failIfNoTests>true</failIfNoTests>
-              <systemProperties></systemProperties>
+              <systemPropertyVariables>
+                <microservice.port>${microservice.port}</microservice.port>
+                <quoters.port>${quoters.port}</quoters.port>
+              </systemPropertyVariables>
             </configuration>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
 
+          <plugin>
+            <groupId>io.fabric8</groupId>
+            <artifactId>docker-maven-plugin</artifactId>
+            <version>0.23.0</version>
+            <configuration>
+              <skip>${maven.test.skip}</skip>
+              <allContainers>true</allContainers>
+              <images>
+                <image>
+                  <alias>quoters</alias>
+                  <name>gturnquist-quoters:latest</name>
+                  <run>
+                    <ports>
+                      <port>${quoters.port}:8080</port>
+                    </ports>
+                    <net>bridge</net>
+                    <wait>
+                      <http>
+                        <url>http://localhost:${quoters.port}/api/random</url>
+                        <method>GET</method>
+                        <status>200..399</status>
+                      </http>
+                      <time>20000</time>
+                      <kill>10000</kill>
+                    </wait>
+                  </run>
+                </image>
+              </images>
+            </configuration>
+            <executions>
+              <execution>
+                <id>remove-old-containers</id>
+                <phase>pre-integration-test</phase>
+                <goals>
+                  <goal>stop</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>start-container</id>
+                <phase>pre-integration-test</phase>
+                <goals>
+                  <goal>start</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>stop-container</id>
+                <phase>post-integration-test</phase>
+                <goals>
+                  <goal>stop</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- This plugin starts the microservice before the integration tests -->
+          <plugin>
+            <groupId>com.bazaarvoice.maven.plugins</groupId>
+            <artifactId>process-exec-maven-plugin</artifactId>
+            <version>0.7</version>
+            <executions>
+              <!-- This starts the microservcie -->
+              <execution>
+                <id>microservice-process</id>
+                <phase>pre-integration-test</phase>
+                <goals>
+                  <goal>start</goal>
+                </goals>
+                <configuration>
+                  <name>microservice</name>
+                  <waitForInterrupt>false</waitForInterrupt>
+                  <healthcheckUrl>http://localhost:${microservice.port}/actuator/health</healthcheckUrl>
+                  <waitAfterLaunch>30</waitAfterLaunch>
+                  <arguments>
+                    <argument>java</argument>
+                    <argument>-jar</argument>
+                    <argument>${project.build.directory}/app.jar</argument>
+                    <argument>--server.port=${microservice.port}</argument>
+                    <argument>--quotes.base.url=http://localhost:${quoters.port}</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <!--Stop all processes in reverse order-->
+              <execution>
+                <id>stop-all</id>
+                <phase>post-integration-test</phase>
+                <goals>
+                  <goal>stop-all</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
