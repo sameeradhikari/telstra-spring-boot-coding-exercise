@@ -166,7 +166,7 @@
               <images>
                 <image>
                   <alias>quoters</alias>
-                  <name>gturnquist-quoters:latest</name>
+                  <name>docker-registry-v2.ae.sda.corp.telstra.com/c967784/gturnquist-quoters:latest</name>
                   <run>
                     <ports>
                       <port>${quoters.port}:8080</port>
